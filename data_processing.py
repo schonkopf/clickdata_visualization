@@ -61,8 +61,8 @@ class click_processing:
 
 class noise_filter:
   def __init__(self, click, min_snr=1, max_duration=None, min_ici=None, max_ici=0.15, min_pulses=4, max_pulses=1000):
-    self.original_detection=click.original_detection
-    detection_time=np.array(self.original_detection[['Begin Time (s)','End Time (s)','Maximum SNR (dB)']])
+    self.original_detection=click
+    detection_time=np.array(click[['Begin Time (s)','End Time (s)','Maximum SNR (dB)']])
     print('Detected '+str(detection_time.shape[0])+' clicks.')
     # Filtering based on SNR
     if min_snr:
