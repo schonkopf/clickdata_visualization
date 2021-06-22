@@ -168,26 +168,26 @@ class noise_filter:
     self.sheet.time_fill(time_vec[0:-1], data*self.recording_length, 'Recording Time (s)')
     data,_=np.histogram(np.array(self.result['Begin Time (MATLAB)']),time_vec)
     self.sheet.time_fill(time_vec[0:-1], data, 'Number of clicks')
+    data2,_=np.histogram(np.array(self.result['Begin Time (MATLAB)'][self.result['ICI']<0.04]),time_vec)
+    data2=np.divide(data2, data)
+    data2[np.isnan(data2)]=0
+    self.sheet.time_fill(time_vec[0:-1], data2, 'Ratio of short-range clicks')
     data,_=np.histogram(np.array(self.train_result['Begin Time (MATLAB)']),time_vec)
     self.sheet.time_fill(time_vec[0:-1], data, 'Number of trains')
-    data=0*time_vec[0:-1]
     data2=0*time_vec[0:-1]
     for n in range(len(data)):
-      data[n]=1/np.nanmean(self.train_result['Mean ICI'].iloc[np.where((np.array(self.train_result['Begin Time (MATLAB)'])>=time_vec[n])*(np.array(self.train_result['Begin Time (MATLAB)'])<time_vec[n+1]))[0]])
       data2[n]=np.nanmean(self.train_result['Number of clicks'].iloc[np.where((np.array(self.train_result['Begin Time (MATLAB)'])>=time_vec[n])*(np.array(self.train_result['Begin Time (MATLAB)'])<time_vec[n+1]))[0]])
-    data[np.isnan(data)]=0
     data2[np.isnan(data2)]=0
-    self.sheet.time_fill(time_vec[0:-1], data, 'Reciprocal of mean ICI')
-    self.sheet.time_fill(time_vec[0:-1], data2, 'Mean number of clicks')  
+    self.sheet.time_fill(time_vec[0:-1], data2, 'Mean number of clicks/train')  
 
   def save(self, filename='Analysis', folder_id=[]):
     self.sheet.save_csv(filename+'_temporal_changes.csv', folder_id=folder_id)
-    self.result.to_csv(filename+'_clicks', sep=',')
-    self.train_result.to_csv(filename+'_trains', sep=',')
+    self.result.to_csv(filename+'_clicks.csv', sep=',')
+    self.train_result.to_csv(filename+'_trains.csv', sep=',')
     if folder_id:
       Gdrive=gdrive_handle(folder_id)
-      Gdrive.upload(filename+'_clicks')
-      Gdrive.upload(filename+'_trains')
+      Gdrive.upload(filename+'_clicks.csv')
+      Gdrive.upload(filename+'_trains.csv')
 
   def plot_ici(self):
     fig = px.scatter(x=self.result['Time'], y=self.result['ICI']*1000, color=self.result['SNR'], log_y=True, range_y=[5,200])
@@ -220,8 +220,8 @@ class noise_filter:
   def plot_temporal_changes(self, min_number_trains=10, fig_width=20, fig_height=8, cmap_name='jet'):
     temp_data=copy.deepcopy(self.sheet)
     fig, ax = plt.subplots(nrows=1, ncols=4, sharey=True, figsize=(fig_width, fig_height))
-    temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,3]=0
-    temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,4]=0
+    temp_data.final_result[temp_data.final_result[:,3]<min_number_trains,2]=0
+    temp_data.final_result[temp_data.final_result[:,3]<min_number_trains,4]=0
     for n in range(4):
       ax[n], im=self.plot_diurnal(temp_data, ax[n], col=n+2, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1, cmap_name=cmap_name)
       ax[n].xaxis_date()
