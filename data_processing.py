@@ -9,13 +9,13 @@ from soundscape_IR.soundscape_viewer import lts_maker
 from soundscape_IR.soundscape_viewer.utility import gdrive_handle
 
 class click_processing:  
-  def __init__(self, folder = [], dateformat='yymmdd_HHMMSS', initial=[], year_initial=2000, process_all=True):
+  def __init__(self, folder = [], dateformat='yymmddHHMMSS', initial=[], year_initial=2000, process_all=True):
     if folder:
       self.collect_folder(folder, dateformat=dateformat, initial=initial, year_initial=year_initial)
     if process_all:
       self.assemble()
 
-  def collect_folder(self, path, dateformat='yymmdd_HHMMSS', initial=[], year_initial=2000):
+  def collect_folder(self, path, dateformat='yymmddHHMMSS', initial=[], year_initial=2000):
     file_list = os.listdir(path)
     self.link = path
     self.dateformat=dateformat
@@ -130,6 +130,18 @@ class noise_filter:
     self.train_result['SD ICI']=ici_result[1:,1]
     self.train_result['Minimum ICI']=ici_result[1:,2]
     self.train_result['Maximum ICI']=ici_result[1:,3]
+    self.effort=np.array([], dtype=np.object)
+  
+  def effort_calculate(self, path, dateformat='yymmddHHMMSS', initial=[], year_initial=2000, recording_length=300):
+    file_list = os.listdir(path)
+    self.recording_length=recording_length
+    lts=lts_maker()
+    for filename in file_list:
+      if filename.endswith('.txt'):
+        if len(self.effort)==0:
+          lts.filename_check(dateformat=dateformat, initial=initial, year_initial=year_initial, filename=file_list[0])
+        lts.get_file_time(filename)
+        self.effort=np.append(self.effort, lts.time_vec)       
 
   def temporal_changes(self, time_resolution=300, begin_date=None, end_date=None, filename='Click_analysis.csv', folder_id=[]):
     from soundscape_IR.soundscape_viewer import data_organize
@@ -150,7 +162,10 @@ class noise_filter:
     else:
       begin_time=np.floor(np.min(self.original_detection['Begin Time (s)'])/24/3600)
       end_time=np.ceil(np.max(self.original_detection['Begin Time (s)'])/24/3600)
+    
     time_vec=np.arange(begin_time,end_time,time_resolution/24/3600)
+    data,_=np.histogram(np.array(self.effort)/24/3600,time_vec)
+    self.sheet.time_fill(time_vec[0:-1], data*self.recording_length, 'Recording Time (s)')
     data,_=np.histogram(np.array(self.result['Begin Time (MATLAB)']),time_vec)
     self.sheet.time_fill(time_vec[0:-1], data, 'Number of clicks')
     data,_=np.histogram(np.array(self.train_result['Begin Time (MATLAB)']),time_vec)
@@ -163,7 +178,7 @@ class noise_filter:
     data[np.isnan(data)]=0
     data2[np.isnan(data2)]=0
     self.sheet.time_fill(time_vec[0:-1], data, 'Reciprocal of mean ICI')
-    self.sheet.time_fill(time_vec[0:-1], data2, 'Mean number of clicks')
+    self.sheet.time_fill(time_vec[0:-1], data2, 'Mean number of clicks')  
 
   def save(self, filename='Analysis', folder_id=[]):
     self.sheet.save_csv(filename+'_temporal_changes.csv', folder_id=folder_id)
@@ -208,9 +223,9 @@ class noise_filter:
     temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,3]=0
     temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,4]=0
     for n in range(4):
-      ax[n], im=self.plot_diurnal(temp_data, ax[n], col=n+1, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1)
+      ax[n], im=self.plot_diurnal(temp_data, ax[n], col=n+2, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1)
       ax[n].xaxis_date()
-      ax[n].set_title(temp_data.result_header[n+1])
+      ax[n].set_title(temp_data.result_header[n+2])
       plt.setp(ax[n].get_xticklabels(), rotation=45, ha='right')
       cbar = fig.colorbar(im, ax=ax[n])
       if n==0:
