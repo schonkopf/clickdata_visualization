@@ -217,13 +217,13 @@ class noise_filter:
     ax=(self.train_result['Number of clicks']).hist(bins=np.arange(0, 60, 3), grid=False, ax=axes[2])
     _=ax.set_xlabel("Number of clicks")
 
-  def plot_temporal_changes(self, min_number_trains=10, fig_width=20, fig_height=8):
+  def plot_temporal_changes(self, min_number_trains=10, fig_width=20, fig_height=8, cmap_name='jet'):
     temp_data=copy.deepcopy(self.sheet)
     fig, ax = plt.subplots(nrows=1, ncols=4, sharey=True, figsize=(fig_width, fig_height))
     temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,3]=0
     temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,4]=0
     for n in range(4):
-      ax[n], im=self.plot_diurnal(temp_data, ax[n], col=n+2, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1)
+      ax[n], im=self.plot_diurnal(temp_data, ax[n], col=n+2, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1, cmap_name=cmap_name)
       ax[n].xaxis_date()
       ax[n].set_title(temp_data.result_header[n+2])
       plt.setp(ax[n].get_xticklabels(), rotation=45, ha='right')
@@ -231,7 +231,7 @@ class noise_filter:
       if n==0:
         ax[n].set_ylabel('Hour')
 
-  def plot_diurnal(self, sheet, ax, col=1, vmin=None, vmax=None, fig_width=16, fig_height=8, nan_value=0):
+  def plot_diurnal(self, sheet, ax, col=1, vmin=None, vmax=None, fig_width=16, fig_height=8, nan_value=0, cmap_name='jet'):
     hr_boundary=[np.min(24*(sheet.final_result[:,0]-np.floor(sheet.final_result[:,0]))), np.max(24*(sheet.final_result[:,0]-np.floor(sheet.final_result[:,0])))]
     input_data=sheet.final_result[:,col]
     input_data[input_data==nan_value]=np.nan
@@ -244,6 +244,6 @@ class noise_filter:
     python_dt=day+693960-366
 
     plot_matrix=input_data.reshape((len(day), len(hr))).T
-    im=ax.imshow(plot_matrix, vmin=vmin, vmax=vmax, origin='lower',  aspect='auto', cmap=cm.jet,
+    im=ax.imshow(plot_matrix, vmin=vmin, vmax=vmax, origin='lower',  aspect='auto', cmap=plt.get_cmap(cmap_name),
                     extent=[python_dt[0], python_dt[-1], np.min(hr_boundary), np.max(hr_boundary)], interpolation='none')
     return ax, im
