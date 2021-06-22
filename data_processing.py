@@ -26,6 +26,9 @@ class click_processing:
         if filename.endswith('.txt'):
             self.audioname = np.append(self.audioname, filename)
     print('Identified ', len(self.audioname), 'files')
+    
+  def save_csv(self, path='.', filename='All_detections.csv'):
+    self.original_detection.to_csv(path+'/'+filename, sep='\t', index=True)
 
   def assemble(self, start=0, num_file=None):
     self.start = start
