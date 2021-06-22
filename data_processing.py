@@ -205,10 +205,11 @@ class noise_filter:
     temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,3]=0
     temp_data.final_result[temp_data.final_result[:,2]<min_number_trains,4]=0
     for n in range(4):
-      ax[n]=self.plot_diurnal(temp_data, ax[n], col=n+1, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1)
+      ax[n], im=self.plot_diurnal(temp_data, ax[n], col=n+1, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1)
       ax[n].xaxis_date()
       ax[n].set_title(temp_data.result_header[n+1])
       plt.setp(ax[n].get_xticklabels(), rotation=45, ha='right')
+      cbar = fig.colorbar(im, ax=ax[n])
       if n==0:
         ax[n].set_ylabel('Hour')
 
@@ -227,5 +228,4 @@ class noise_filter:
     plot_matrix=input_data.reshape((len(day), len(hr))).T
     im=ax.imshow(plot_matrix, vmin=vmin, vmax=vmax, origin='lower',  aspect='auto', cmap=cm.jet,
                     extent=[python_dt[0], python_dt[-1], np.min(hr_boundary), np.max(hr_boundary)], interpolation='none')
-    cbar = fig.colorbar(im, ax=ax)
-    return ax
+    return ax, im
