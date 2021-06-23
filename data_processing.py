@@ -220,8 +220,8 @@ class noise_filter:
   def plot_temporal_changes(self, min_number_trains=10, fig_width=20, fig_height=8, cmap_name='jet'):
     temp_data=copy.deepcopy(self.sheet)
     fig, ax = plt.subplots(nrows=1, ncols=4, sharey=True, figsize=(fig_width, fig_height))
-    temp_data.final_result[temp_data.final_result[:,3]<min_number_trains,2]=0
-    temp_data.final_result[temp_data.final_result[:,3]<min_number_trains,4]=0
+    temp_data.final_result[temp_data.final_result[:,4]<min_number_trains,3]=0
+    temp_data.final_result[temp_data.final_result[:,4]<min_number_trains,5]=0
     for n in range(4):
       ax[n], im=self.plot_diurnal(temp_data, ax[n], col=n+2, fig_width=fig_width/4, fig_height=fig_height, nan_value=-1, cmap_name=cmap_name)
       ax[n].xaxis_date()
