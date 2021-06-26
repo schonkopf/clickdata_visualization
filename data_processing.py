@@ -62,7 +62,7 @@ class click_processing:
     self.original_detection=self.original_detection.sort_values(by=['Begin Time (s)'])
 
 class noise_filter:
-  def __init__(self, click, min_snr=1, max_duration=None, min_ici=None, max_ici=0.15, min_pulses=4, max_pulses=None, max_modulation=0.25):
+  def __init__(self, click, min_snr=1, max_duration=None, min_ici=None, max_ici=0.15, min_pulses=4, max_pulses=None, max_smoothness=0.25,  remove_machine=False):
     self.original_detection=click
     detection_time=np.array(click[['Begin Time (s)','End Time (s)','Maximum SNR (dB)']])
     print('Detected '+str(detection_time.shape[0])+' signals.')
@@ -103,7 +103,7 @@ class noise_filter:
       print('Removing trains with a few pulses, there are '+str(detection_time.shape[0])+' signals left.')
 
     # Filtering based on ICI smoothness
-    if max_modulation:
+    if max_smoothness:
       ICI=np.diff(detection_time[:,0])
       ICI[ICI>max_ici]=np.nan
       train_begin=np.append(0, np.where(np.diff(detection_time[:,0])>max_ici)[0]+1)
@@ -111,15 +111,14 @@ class noise_filter:
       modulation=np.array([])
       for n in range(len(train_begin)):
         modulation=np.append(modulation, np.nanmean(np.abs(np.diff(detection_time[train_begin[n]:train_end[n]+1,0],n=2)))/np.nanmean(np.diff(detection_time[train_begin[n]:train_end[n]+1,0])))          
-      noise_train=np.where(modulation>max_modulation)[0].astype(int)
+      noise_train=np.where(modulation>max_smoothness)[0].astype(int)
       detection_time, self.noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
     print('Removing unsmoothed clicks, there are '+str(detection_time.shape[0])+' clicks left.')
 
     # Filtering based on ICI repetition
-    remove_machine=True
-    interval=np.arange(-1*max_ici*1000, max_ici*1000)
-    interval_list=np.where(interval>30)[0]
     if remove_machine:
+      interval=np.arange(-1*max_ici*1000, max_ici*1000)
+      interval_list=np.where(interval>30)[0]
       train_begin=np.append(0, np.where(np.diff(detection_time[:,0])>max_ici)[0]+1)
       train_end=np.append(np.where(np.diff(detection_time[:,0])>max_ici)[0], detection_time.shape[0]-1)
       ici_estimation=np.array([0,0])
