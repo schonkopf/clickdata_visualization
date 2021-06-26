@@ -182,7 +182,7 @@ class noise_filter:
     train_end=np.append(np.where(np.diff(detection_time[:,0])>max_ici)[0], detection_time.shape[0]-1)
     noise_train=np.ones(train_begin.shape)
     for n in range(len(train_begin)):
-      if np.round(detection_time[train_begin[n],0]*1000) in np.array(np.round(click_after_filter.train_result['Begin Time (MATLAB)']*24*3600*1000)):
+      if np.round(detection_time[train_begin[n],0]*1000) in np.array(np.round(self.train_result['Begin Time (MATLAB)']*24*3600*1000)):
         noise_train[n]=0
     noise_train=np.where(noise_train==1)[0]
     detection_time, noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
