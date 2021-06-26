@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from scipy.stats import entropy
+from sklearn.neighbors import KernelDensity
 import os
 import copy
 from soundscape_IR.soundscape_viewer import lts_maker
@@ -60,10 +62,11 @@ class click_processing:
     self.original_detection=self.original_detection.sort_values(by=['Begin Time (s)'])
 
 class noise_filter:
-  def __init__(self, click, min_snr=1, max_duration=None, min_ici=None, max_ici=0.15, min_pulses=4, max_pulses=1000):
+  def __init__(self, click, min_snr=1, max_duration=None, min_ici=None, max_ici=0.15, min_pulses=4, max_pulses=None, max_modulation=0.25):
     self.original_detection=click
     detection_time=np.array(click[['Begin Time (s)','End Time (s)','Maximum SNR (dB)']])
-    print('Detected '+str(detection_time.shape[0])+' clicks.')
+    print('Detected '+str(detection_time.shape[0])+' signals.')
+
     # Filtering based on SNR
     if min_snr:
       noise_list=np.where(detection_time[:,2]<min_snr)[0]
@@ -74,9 +77,9 @@ class noise_filter:
       duration=(detection_time[:,1]-detection_time[:,0])
       noise_list=np.where(duration>max_duration)[0]
       detection_time=np.delete(detection_time, noise_list, axis=0)
-      print('Removing long clicks, there are '+str(detection_time.shape[0])+' clicks left.')
+      print('Removing long signals, there are '+str(detection_time.shape[0])+' signals left.')
 
-    # Filtering based on ICI and number of pulses
+    # Filtering based on ICI
     # min-ICI
     if min_ici:
       ICI=np.diff(detection_time[:,0])
@@ -86,53 +89,133 @@ class noise_filter:
     ICI=np.append(np.append(max_ici, np.diff(detection_time[:,0])), max_ici)
     noise_list=np.where(((ICI[0:-1]>max_ici)*(ICI[1:]>max_ici))==True)[0]
     detection_time=np.delete(detection_time, noise_list, axis=0)
-    # pulse number
-    max_ici=max_ici*2
-    train_begin=np.append(0, np.where(np.diff(detection_time[:,0])>max_ici)[0]+1)
-    train_end=np.append(np.where(np.diff(detection_time[:,0])>max_ici)[0], detection_time.shape[0]-1)
-    num_pulses=train_end-train_begin+1
-    noise_train=np.where(num_pulses<min_pulses)[0].astype(int)
-    if max_pulses:
-      noise_train=np.sort(np.append(noise_train, np.where(num_pulses>max_pulses)[0])).astype(int)
-    noise_list=np.array([])
-    for n in noise_train:
-      noise_list=np.append(noise_list, np.arange(train_begin[n], train_end[n]+1)).astype(int)
-    detection_time=np.delete(detection_time, noise_list, axis=0)
-    print('Removing isolated clicks, there are '+str(detection_time.shape[0])+' clicks left.')
+    print('Removing isolated signals, there are '+str(detection_time.shape[0])+' signals left.')
 
+    # Filtering based on pulse number
+    if min_pulses:
+      ICI=np.diff(detection_time[:,0])
+      train_begin=np.append(0, np.where(ICI>max_ici)[0]+1)
+      train_end=np.append(np.where(ICI>max_ici)[0], detection_time.shape[0]-1)
+      noise_train=np.where((train_end-train_begin+1)<min_pulses)[0].astype(int)
+      if max_pulses:
+        noise_train=np.sort(np.append(noise_train, np.where((train_end-train_begin+1)>max_pulses)[0])).astype(int)
+      detection_time,_=self.train_remove(detection_time, noise_train, train_begin, train_end)
+      print('Removing trains with a few pulses, there are '+str(detection_time.shape[0])+' signals left.')
+
+    # Filtering based on ICI smoothness
+    if max_modulation:
+      ICI=np.diff(detection_time[:,0])
+      ICI[ICI>max_ici]=np.nan
+      train_begin=np.append(0, np.where(np.diff(detection_time[:,0])>max_ici)[0]+1)
+      train_end=np.append(np.where(np.diff(detection_time[:,0])>max_ici)[0], detection_time.shape[0]-1)
+      modulation=np.array([])
+      for n in range(len(train_begin)):
+        modulation=np.append(modulation, np.nanmean(np.abs(np.diff(detection_time[train_begin[n]:train_end[n]+1,0],n=2)))/np.nanmean(np.diff(detection_time[train_begin[n]:train_end[n]+1,0])))          
+      noise_train=np.where(modulation>max_modulation)[0].astype(int)
+      detection_time, self.noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
+    print('Removing unsmoothed clicks, there are '+str(detection_time.shape[0])+' clicks left.')
+
+    # Filtering based on ICI repetition
+    remove_machine=True
+    interval=np.arange(-1*max_ici*1000, max_ici*1000)
+    interval_list=np.where(interval>30)[0]
+    if remove_machine:
+      train_begin=np.append(0, np.where(np.diff(detection_time[:,0])>max_ici)[0]+1)
+      train_end=np.append(np.where(np.diff(detection_time[:,0])>max_ici)[0], detection_time.shape[0]-1)
+      ici_estimation=np.array([0,0])
+      for n in range(len(train_begin)):
+        ici_t=np.diff(detection_time[train_begin[n]:train_end[n]+1,0])*1000
+        kde=KernelDensity(kernel='gaussian', bandwidth=2.5).fit(ici_t.reshape(-1,1))
+        dens=np.exp(kde.score_samples(np.arange(0, max_ici*1000).reshape(-1,1)))
+        peak_interval=interval[interval_list[np.argmax(np.correlate(dens, dens, mode='full')[interval_list-1])]]
+        peak_ici=np.arange(0, max_ici*1000)[np.argmax(dens)]
+        ici_estimation=np.vstack((ici_estimation, np.array([peak_interval, peak_ici])))
+      noise_train=np.where(np.divide(np.abs(ici_estimation[1:,0]-ici_estimation[1:,1]),ici_estimation[1:,1])<0.05)[0]
+      #noise_train=np.append(noise_train, np.where(np.divide(np.remainder(ici_estimation[1:,1], ici_remove), np.floor(ici_estimation[1:,1]/ici_remove))<=5)[0])
+      detection_time,self.noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
+      print('Removing machine-associated clicks, there are '+str(detection_time.shape[0])+' clicks left.')
+
+    self.click_analysis(detection_time, max_ici=max_ici)
+    self.train_analysis(max_ici=max_ici)
+
+  def click_analysis(self, detection_time, max_ici):
     # Save result
-    duration=(detection_time[:,1]-detection_time[:,0])
     ICI=np.append(np.diff(detection_time[:,0]), np.nan)
     ICI[ICI>max_ici]=np.nan
-    click_time=pd.to_datetime(detection_time[:,0]/24/3600-693962, unit='D',origin=pd.Timestamp('1900-01-01'))
-    snr=detection_time[:,2]
     self.detection=detection_time
     self.result=pd.DataFrame()
-    self.result['Time']=click_time
+    self.result['Time']=pd.to_datetime(detection_time[:,0]/24/3600-693962, unit='D',origin=pd.Timestamp('1900-01-01'))
     self.result['Begin Time (MATLAB)']=detection_time[:,0]/24/3600
-    self.result['Duration']=duration
+    self.result['Duration']=detection_time[:,1]-detection_time[:,0]
     self.result['ICI']=ICI
-    self.result['SNR']=snr
+    self.result['SNR']=detection_time[:,2]
 
+  def train_analysis(self, max_ici):
     # Analysis of click trains
+    detection_time=self.detection
+    ICI=self.result['ICI']
     train_begin=np.append(0, np.where(np.diff(detection_time[:,0])>max_ici)[0]+1)
     train_end=np.append(np.where(np.diff(detection_time[:,0])>max_ici)[0], detection_time.shape[0]-1)
     self.train_result=pd.DataFrame()
-    self.train_result['Time']=click_time[train_begin]
+    self.train_result['Time']=pd.to_datetime(detection_time[train_begin,0]/24/3600-693962, unit='D',origin=pd.Timestamp('1900-01-01'))
     self.train_result['Begin Time (MATLAB)']=detection_time[train_begin,0]/24/3600
     self.train_result['Duration']=detection_time[train_end,1]-detection_time[train_begin,0]
     self.train_result['Number of clicks']=train_end-train_begin+1
-    ici_result=np.array([0,0,0,0])
+    ici_result=np.array([0,0,0,0,0,0])
     for n in range(len(train_begin)):
-      temp=np.array([np.nanmean(ICI[train_begin[n]:train_end[n]+1]), np.nanstd(ICI[train_begin[n]:train_end[n]+1]), np.nanmin(ICI[train_begin[n]:train_end[n]+1]), np.nanmax(ICI[train_begin[n]:train_end[n]+1])])
+      ici_t=np.diff(detection_time[train_begin[n]:train_end[n]+1,0])*1000
+      kde=KernelDensity(kernel='gaussian', bandwidth=2.5).fit(ici_t.reshape(-1,1))
+      dens=np.exp(kde.score_samples(np.arange(0, max_ici*1000).reshape(-1,1)))
+      peak_ici=np.arange(0, max_ici*1000)[np.argmax(dens)]
+      diversity=entropy(dens, base=10)
+      temp=np.array([np.nanmean(ICI[train_begin[n]:train_end[n]+1]), np.nanmean(np.abs(np.diff(ICI[train_begin[n]:train_end[n]]))), np.nanmin(ICI[train_begin[n]:train_end[n]]), np.nanmax(ICI[train_begin[n]:train_end[n]]), diversity, peak_ici])
       ici_result=np.vstack((ici_result, temp))
     self.train_result['Mean ICI']=ici_result[1:,0]
-    self.train_result['SD ICI']=ici_result[1:,1]
+    self.train_result['Peak ICI']=ici_result[1:,5]
     self.train_result['Minimum ICI']=ici_result[1:,2]
     self.train_result['Maximum ICI']=ici_result[1:,3]
-    self.effort=np.array([], dtype=np.object)
+    self.train_result['ICI Smoothness']=np.divide(ici_result[1:,1], ici_result[1:,0])    
+    self.train_result['ICI Diversity']=ici_result[1:,4]
+
+  def train_click_check(self, max_ici):
+    detection_time=self.detection
+    train_begin=np.append(0, np.where(np.diff(detection_time[:,0])>max_ici)[0]+1)
+    train_end=np.append(np.where(np.diff(detection_time[:,0])>max_ici)[0], detection_time.shape[0]-1)
+    noise_train=np.ones(train_begin.shape)
+    for n in range(len(train_begin)):
+      if np.round(detection_time[train_begin[n],0]*1000) in np.array(np.round(click_after_filter.train_result['Begin Time (MATLAB)']*24*3600*1000)):
+        noise_train[n]=0
+    noise_train=np.where(noise_train==1)[0]
+    detection_time, noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
+    self.click_analysis(detection_time, max_ici=max_ici)
+    self.train_analysis(max_ici=max_ici)
+
+  def train_drop(self, col1, col1_range, col2, col2_range, noise_train):
+    con1_data=self.train_result[(self.train_result[col1]>=col1_range[0]) & (self.train_result[col1]<col1_range[1])]
+    noise_train=np.append(noise_train, con1_data[(con1_data[col2]>=col2_range[0]) & (con1_data[col2]<col2_range[1])].index)
+    return noise_train
+
+  def train_search_drop(self, col1, col2, count, nbins=50):
+    if len(nbins)==1:
+      nbins=[nbins, nbins]
+    H, col1_bin, col2_bin=np.histogram2d(self.train_result[col1], self.train_result[col2], bins=(nbins[0],nbins[1]))
+    col2_index, col1_index=np.where(H.T>=count)
+    noise_train=np.array([])
+    for n in range(len(col1_index)):
+      noise_train=self.train_drop(col1, [col1_bin[col1_index[n]], col1_bin[col1_index[n]+1]], col2, [col2_bin[col2_index[n]], col2_bin[col2_index[n]+1]], noise_train)
+    self.noise_result=self.train_result.loc[noise_train]
+    self.train_result=self.train_result.drop(index=noise_train)
+    
+  def train_remove(self, detection_time, noise_train, train_begin, train_end):
+    noise_list=np.array([])
+    for n in noise_train:
+      noise_list=np.append(noise_list, np.arange(train_begin[n], train_end[n]+1)).astype(int)
+    noise_time=detection_time[noise_list,:]
+    detection_time=np.delete(detection_time, noise_list, axis=0)
+    return detection_time, noise_time
   
   def effort_calculate(self, path, dateformat='yymmddHHMMSS', initial=[], year_initial=2000, recording_length=300):
+    self.effort=np.array([], dtype=np.object)
     file_list = os.listdir(path)
     self.recording_length=recording_length
     lts=lts_maker()
@@ -189,8 +272,8 @@ class noise_filter:
       Gdrive.upload(filename+'_clicks.csv')
       Gdrive.upload(filename+'_trains.csv')
 
-  def plot_ici(self):
-    fig = px.scatter(x=self.result['Time'], y=self.result['ICI']*1000, color=self.result['SNR'], log_y=True, range_y=[5,200])
+  def plot_ici(self, range_y=[5,200]):
+    fig = px.scatter(x=self.result['Time'], y=self.result['ICI']*1000, color=self.result['SNR'], log_y=True, range_y=range_y)
     fig.update_xaxes(title_text='Time (sec)')
     fig.update_yaxes(title_text='Inter-click interval (ms)')
     fig.update_layout(xaxis=dict(rangeslider=dict(visible=True)))
@@ -247,3 +330,11 @@ class noise_filter:
     im=ax.imshow(plot_matrix, vmin=vmin, vmax=vmax, origin='lower',  aspect='auto', cmap=plt.get_cmap(cmap_name),
                     extent=[python_dt[0], python_dt[-1], np.min(hr_boundary), np.max(hr_boundary)], interpolation='none')
     return ax, im
+
+  
+  def plot_histogram2d(self, col1='Peak ICI', col2='ICI Diversity', nbins=50):
+    if len(nbins)==1:
+      nbins=[nbins, nbins]
+    H, col1_bin, col2_bin=np.histogram2d(self.train_result[col1], self.train_result[col2], bins=(nbins[0],nbins[1]))
+    fig = go.Figure(data=go.Heatmap(z=H.T, x=col1_bin, y=col2_bin))
+    fig.show()
