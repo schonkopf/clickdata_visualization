@@ -62,7 +62,7 @@ class click_processing:
     self.original_detection=self.original_detection.sort_values(by=['Begin Time (s)'])
 
 class noise_filter:
-  def __init__(self, click, min_snr=1, max_duration=None, min_ici=None, max_ici=0.15, min_pulses=4, max_pulses=None, max_smoothness=0.25,  remove_machine=False):
+  def __init__(self, click, min_snr=1, max_duration=None, min_ici=None, max_ici=0.2, min_pulses=5, max_pulses=None, max_smoothness=0.5,  remove_machine=False):
     self.original_detection=click
     detection_time=np.array(click[['Begin Time (s)','End Time (s)','Maximum SNR (dB)']])
     print('Detected '+str(detection_time.shape[0])+' signals.')
@@ -70,13 +70,15 @@ class noise_filter:
     # Filtering based on SNR
     if min_snr:
       noise_list=np.where(detection_time[:,2]<min_snr)[0]
-      detection_time=np.delete(detection_time, noise_list, axis=0)
+      if len(noise_list)>0:
+        detection_time=np.delete(detection_time, noise_list, axis=0)
 
     # Filtering based on duration
     if max_duration:
       duration=(detection_time[:,1]-detection_time[:,0])
       noise_list=np.where(duration>max_duration)[0]
-      detection_time=np.delete(detection_time, noise_list, axis=0)
+      if len(noise_list)>0:
+        detection_time=np.delete(detection_time, noise_list, axis=0)
       print('Removing long signals, there are '+str(detection_time.shape[0])+' signals left.')
 
     # Filtering based on ICI
@@ -88,7 +90,8 @@ class noise_filter:
     # max-ICI
     ICI=np.append(np.append(max_ici, np.diff(detection_time[:,0])), max_ici)
     noise_list=np.where(((ICI[0:-1]>max_ici)*(ICI[1:]>max_ici))==True)[0]
-    detection_time=np.delete(detection_time, noise_list, axis=0)
+    if len(noise_list)>0:
+      detection_time=np.delete(detection_time, noise_list, axis=0)
     print('Removing isolated signals, there are '+str(detection_time.shape[0])+' signals left.')
 
     # Filtering based on pulse number
@@ -99,7 +102,8 @@ class noise_filter:
       noise_train=np.where((train_end-train_begin+1)<min_pulses)[0].astype(int)
       if max_pulses:
         noise_train=np.sort(np.append(noise_train, np.where((train_end-train_begin+1)>max_pulses)[0])).astype(int)
-      detection_time,_=self.train_remove(detection_time, noise_train, train_begin, train_end)
+      if len(noise_train)>0:
+        detection_time,_=self.train_remove(detection_time, noise_train, train_begin, train_end)
       print('Removing trains with a few pulses, there are '+str(detection_time.shape[0])+' signals left.')
 
     # Filtering based on ICI smoothness
@@ -112,7 +116,8 @@ class noise_filter:
       for n in range(len(train_begin)):
         modulation=np.append(modulation, np.nanmean(np.abs(np.diff(detection_time[train_begin[n]:train_end[n]+1,0],n=2)))/np.nanmean(np.diff(detection_time[train_begin[n]:train_end[n]+1,0])))          
       noise_train=np.where(modulation>max_smoothness)[0].astype(int)
-      detection_time, self.noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
+      if len(noise_train)>0:
+        detection_time, self.noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
     print('Removing unsmoothed clicks, there are '+str(detection_time.shape[0])+' clicks left.')
 
     # Filtering based on ICI repetition
@@ -131,7 +136,8 @@ class noise_filter:
         ici_estimation=np.vstack((ici_estimation, np.array([peak_interval, peak_ici])))
       noise_train=np.where(np.divide(np.abs(ici_estimation[1:,0]-ici_estimation[1:,1]),ici_estimation[1:,1])<0.05)[0]
       #noise_train=np.append(noise_train, np.where(np.divide(np.remainder(ici_estimation[1:,1], ici_remove), np.floor(ici_estimation[1:,1]/ici_remove))<=5)[0])
-      detection_time,self.noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
+      if len(noise_train)>0:
+        detection_time,self.noise_time=self.train_remove(detection_time, noise_train, train_begin, train_end)
       print('Removing machine-associated clicks, there are '+str(detection_time.shape[0])+' clicks left.')
 
     self.click_analysis(detection_time, max_ici=max_ici)
