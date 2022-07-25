@@ -402,10 +402,10 @@ class tonal_processing:
 
     data=np.sort(data)
     frequency=np.array(self.original_detection['Frequency'])
-    data_list=tonal_noise_filter(data, frequency)
+    data_list=self.tonal_noise_filter(data, frequency)
     self.result=self.original_detection.iloc[data_list]
 
-  def tonal_noise_filter(tonal, frequency, scanning_window=0.5, scanning_frequency=3000, occupancy_th=0.2, harmonic_remove=True):
+  def tonal_noise_filter(self, tonal, frequency, scanning_window=0.5, scanning_frequency=3000, occupancy_th=0.2, harmonic_remove=True):
     scanning_window=scanning_window*1000
     data=np.sort(np.array(tonal))
     frequency=np.array(frequency)
