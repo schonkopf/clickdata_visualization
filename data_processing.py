@@ -343,3 +343,100 @@ class noise_filter:
     H, col1_bin, col2_bin=np.histogram2d(self.train_result[col1], self.train_result[col2], bins=(nbins[0],nbins[1]))
     fig = go.Figure(data=go.Heatmap(z=H.T, x=col1_bin, y=col2_bin))
     fig.show()
+
+class tonal_processing:  
+  def __init__(self, folder = [], dateformat='yymmddHHMMSS', initial=[], year_initial=2000, process_all=True):
+    if folder:
+      self.collect_folder(folder, dateformat=dateformat, initial=initial, year_initial=year_initial)
+    if process_all:
+      self.assemble()
+
+  def collect_folder(self, path, dateformat='yymmddHHMMSS', initial=[], year_initial=2000):
+    file_list = os.listdir(path)
+    self.link = path
+    self.dateformat=dateformat
+    self.initial=initial
+    self.year_initial=year_initial
+    self.audioname=np.array([], dtype=np.object)
+    for filename in file_list:
+        if filename.endswith('.txt'):
+            self.audioname = np.append(self.audioname, filename)
+    print('Identified ', len(self.audioname), 'files')
+    
+  def save_csv(self, path='.', filename='All_detections.csv'):
+    self.original_detection.to_csv(path+'/'+filename, sep='\t', index=True)
+
+  def assemble(self, start=0, num_file=None):
+    self.start = start
+    if num_file:
+      run_list = range(self.start, self.start+num_file)
+    else:
+      run_list = range(self.start, len(self.audioname))
+
+    n=0
+    lts=lts_maker()
+    for file in run_list:
+      print('\r', end='')
+      temp = self.audioname[file]
+      print('Processing file no. '+str(file)+' :'+temp+', in total: '+str(len(self.audioname))+' files', flush=True, end='')
+      df = pd.read_table(self.link+'/'+temp) 
+      if n==0:
+        lts.filename_check(dateformat=self.dateformat, initial=self.initial, year_initial=self.year_initial, filename=temp)
+        lts.get_file_time(temp)
+        data = df['Time']+lts.time_vec
+        frequency = df['Frequency']
+        snr = df['Strength']
+      else:
+        lts.get_file_time(temp)
+        data = data.append(df['Time']+lts.time_vec)
+        frequency = frequency.append(df['Frequency'])
+        snr = snr.append(df['Strength'])
+      n+=1
+    
+    self.original_detection=pd.DataFrame()
+    self.original_detection['Time']=pd.to_datetime(data/24/3600-693962, unit='D',origin=pd.Timestamp('1900-01-01'))
+    self.original_detection['Frequency']=frequency
+    self.original_detection['Strength']=snr
+    self.original_detection['Date_num']=data/24/3600
+    self.original_detection=self.original_detection.sort_values(by=['Time'])
+
+    data=np.sort(data)
+    frequency=np.array(self.original_detection['Frequency'])
+    data_list=tonal_noise_filter(data, frequency)
+    self.result=self.original_detection.iloc[data_list]
+
+  def tonal_noise_filter(tonal, frequency, scanning_window=0.5, scanning_frequency=3000, occupancy_th=0.2, harmonic_remove=True):
+    scanning_window=scanning_window*1000
+    data=np.sort(np.array(tonal))
+    frequency=np.array(frequency)
+    data=np.round((data-np.min(data))*1000)
+    time_resolution=np.min(np.diff(np.unique(data)))
+    full_count=np.ceil(scanning_window/time_resolution)-1
+    presence=np.zeros(data.size)
+    for n in np.arange(data.size):
+      temp=np.abs(data-data[n])
+      data_list=np.where(temp<=scanning_window/2)[0]
+      freq_list=np.multiply(frequency[data_list]<=frequency[n]+scanning_frequency/2, frequency[data_list]>=frequency[n]-scanning_frequency/2)
+      data_list=data_list[freq_list==1]
+      if ((np.unique(data[data_list]).size-1)/full_count)>occupancy_th:
+        presence[data_list]=1 
+    data_list=np.where(presence==1)[0]
+
+    if harmonic_remove:
+      harmonic_list=np.ones(data_list.size)
+      for n in np.arange(data_list.size):
+        temp_list=np.where(np.abs(data[data_list]-data[data_list[n]])<15)[0]
+        temp=frequency[data_list[n]]/frequency[data_list[temp_list]]
+        temp=temp[temp>1.5]
+        if np.sum(np.abs(temp-np.round(temp))<0.05)>1:
+          harmonic_list[n]=0
+      data_list=data_list[np.where(harmonic_list==1)[0]]
+    return data_list
+
+  def plot_frequency(self):
+    fig = px.scatter(x=self.result['Time'], y=self.result['Frequency'], color=self.result['Strength'])
+    fig.update_xaxes(title_text='Time (sec)')
+    fig.update_yaxes(title_text='Frequency (Hz)')
+    fig.update_layout(xaxis=dict(rangeslider=dict(visible=True)))
+    fig.update_traces(marker=dict(size=3))
+    fig.show()
