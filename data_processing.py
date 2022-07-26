@@ -389,7 +389,7 @@ class tonal_processing:
       else:
         lts.get_file_time(temp)
         data = pd.concat([data, df['Time']+lts.time_vec])
-        frequency = frequency.append(df['Frequency'])
+        frequency = pd.concat([frequency, df['Frequency']])
         snr = pd.concat([snr, df['Strength']])
       n+=1
     
