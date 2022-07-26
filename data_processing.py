@@ -440,3 +440,42 @@ class tonal_processing:
     fig.update_layout(xaxis=dict(rangeslider=dict(visible=True)))
     fig.update_traces(marker=dict(size=3))
     fig.show()
+    
+  def group_screening(self, group_interval=600, min_duration=60, label=None):
+    data=self.result
+    data_time=np.array(data['Date_num'])*24*60*60
+    fragment_onset=np.hstack((np.array([0]), np.where(np.diff(data_time)>group_interval)[0]+1))
+    fragment_offset=np.hstack((np.where(np.diff(data_time)>group_interval)[0], np.array([len(data_time)-1])))
+    duration=data_time[fragment_offset]-data_time[fragment_onset]
+    fragment_onset=fragment_onset[np.where(duration>min_duration)[0]]
+    fragment_offset=fragment_offset[np.where(duration>min_duration)[0]]
+    group_onset=data_time[fragment_onset]/24/60/60
+    group_offset=data_time[fragment_offset]/24/60/60
+        
+    df=pd.DataFrame()
+    df['Onset']=pd.to_datetime(group_onset-693962, unit='D',origin=pd.Timestamp('1900-01-01'))
+    df['Offset']=pd.to_datetime(group_offset-693962, unit='D',origin=pd.Timestamp('1900-01-01'))
+    
+    if len(group_onset)>0:
+        for n in np.arange(len(group_onset)):
+          temp=np.arange(fragment_onset[n], fragment_offset[n]+1)
+          freq_data=np.array(data['Frequency'])[temp]
+          freq_time=np.array(data['Date_num'])[temp]
+          freq_timebins=len(np.unique(np.round(freq_time*24*60*60)))
+          if n==0:
+            freq_duration=freq_timebins
+            freq_percentile=np.percentile(freq_data, [5, 50, 95])[None,:]
+          else:
+            freq_percentile=np.vstack((np.percentile(freq_data, [5, 50, 95]),freq_percentile))
+            freq_duration=np.append(freq_duration, freq_timebins)
+    
+    df.insert(2, 'Detected duration (s)', freq_duration)
+    df2=pd.DataFrame(data=freq_percentile, columns=['Q5', 'Q50', 'Q95'])
+    df=pd.concat([df,df2],axis=1)
+    if label:
+      label=np.matlib.repmat([label],n+1,1)
+      df.insert(0, 'Label', label)
+    self.df_group=df
+
+  def save(self, filename='Analysis'):
+    self.df_group.to_csv(filename+'_groups.csv', sep=',')
