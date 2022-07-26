@@ -54,8 +54,8 @@ class click_processing:
         snr = df['Maximum SNR (dB)']
       else:
         lts.get_file_time(temp)
-        data = data.append(df[['Begin Time (s)', 'End Time (s)']]+lts.time_vec)
-        snr = snr.append(df['Maximum SNR (dB)'])
+        data = pd.concat([data, df[['Begin Time (s)', 'End Time (s)']]+lts.time_vec])
+        snr = pd.concat([snr, df['Maximum SNR (dB)']])
       n+=1
     self.original_detection=data
     self.original_detection['Maximum SNR (dB)']=snr
@@ -388,9 +388,9 @@ class tonal_processing:
         snr = df['Strength']
       else:
         lts.get_file_time(temp)
-        data = data.append(df['Time']+lts.time_vec)
+        data = pd.concat([data, df['Time']+lts.time_vec])
         frequency = frequency.append(df['Frequency'])
-        snr = snr.append(df['Strength'])
+        snr = pd.concat([snr, df['Strength']])
       n+=1
     
     self.original_detection=pd.DataFrame()
